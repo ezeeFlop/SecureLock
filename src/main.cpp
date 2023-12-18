@@ -1,16 +1,19 @@
 #include <Arduino.h>
 #include <HomeSpan.h>
-#include "Tone32.h"
 
-#define BUZZER_PIN 5
 #define BUTTON_PIN 4
 #define RELAY_PIN 26
 
-#define BUZZER_PWM_CHANNEL 0
-
+/**
+ * SecureLock class that extends Service::LockMechanism to implement a secure
+ * door lock using HomeSpan.
+ *
+ * Handles setting lock current/target state characteristics, responding to
+ * button presses to trigger lock state changes, and updating lock state.
+ */
 struct SecureLock : Service::LockMechanism {
-  SpanCharacteristic *current;  // reference to the Current Door State Characteristic
-  SpanCharacteristic *target;   // reference to the Target Door State Characteristic
+  SpanCharacteristic *current;
+  SpanCharacteristic *target;
 
   SecureLock() : Service::LockMechanism() {  // constructor() method
 
@@ -24,24 +27,19 @@ struct SecureLock : Service::LockMechanism {
   }
 
   boolean update() {  // update() method
-    // see HAP Documentation for details on what each value represents
 
-    if (target->getNewVal() == 0) {  // if the target-state value is set to 0, HomeKit is requesting the door to be in open position
+    if (target->getNewVal() == 0) {
       LOG1("Opening Door\n");
-
-      current->setVal(0);  // set the current-state value to 0, which means "opening"
-      LOG1("Current set to 0, opening the gate for 1 second\n");
-      digitalWrite(RELAY_PIN, HIGH);  // close the contact on the relay
-      delay(3000);                  // wait for a second
-      LOG1("Door Opened\n");
-      target->setVal(1);  // lock again
-      LOG1("Target set to 1, closing the gate\n");
-      digitalWrite(RELAY_PIN, LOW);  // open contact on the relay
+      current->setVal(0);
+      digitalWrite(RELAY_PIN, HIGH);
+      delay(3000);
+      target->setVal(1);
+      digitalWrite(RELAY_PIN, LOW);
       current->setVal(1);
       LOG1("Door Closed\n");
     } else {
       LOG1("Closing Door\n");
-      current->setVal(1);  // set the current-state value to 1, which means "closing"
+      current->setVal(1);
       LOG1("Door Closed\n");
     }
 
@@ -49,10 +47,8 @@ struct SecureLock : Service::LockMechanism {
 
   }  // update
 
-  // NEW!  Here is the button() method where all the PushButton actions are defined.   Take note of the signature, and use of the word "override"
-
   void button(int pin, int pressType) override {
-    LOG1("Found button press on pin: ");  // always a good idea to log messages
+    LOG1("Found button press on pin: ");
     LOG1(pin);
     LOG1("  type: ");
     LOG1(pressType == SpanButton::LONG ? "LONG" : (pressType == SpanButton::SINGLE) ? "SINGLE"
@@ -62,7 +58,7 @@ struct SecureLock : Service::LockMechanism {
     int newLevel;
 
     if (pin == BUTTON_PIN) {
-      if (pressType == SpanButton::SINGLE) {  // if a SINGLE press of the power button...
+      if (pressType == SpanButton::SINGLE) {
         target->setVal(0);
         delay(2000);
         update();
@@ -71,26 +67,28 @@ struct SecureLock : Service::LockMechanism {
   }
 };
 
+/**
+ * @brief Set up initial state and register accessories with HomeSpan
+ *
+ * This function initializes the serial connection, configures the
+ * relay pin, and registers the SecureLock accessory with HomeSpan.
+ * It also enables web logging and sets the pairing code.
+ */
 void setup() {
-    Serial.begin(115200);
-    pinMode(RELAY_PIN, OUTPUT);
-    
-    digitalWrite(RELAY_PIN, LOW);
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
 
-    //ledcWriteTone(BUZZER_PWM_CHANNEL, 800);
-    //delay(500);
+  homeSpan.enableWebLog(10, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
+  homeSpan.setQRID("SPST");
+  homeSpan.setPairingCode("04288230");
 
-    homeSpan.enableWebLog(10, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
-    homeSpan.setQRID("SPST");
-    homeSpan.setPairingCode("04288230");
+  homeSpan.begin(Category::Doors, "SecureLock");
 
-    homeSpan.begin(Category::Doors, "SecureLock");
+  SPAN_ACCESSORY();  // create Bridge (note this sketch uses the SPAN_ACCESSORY() macro, introduced in v1.5.1 --- see the HomeSpan API Reference for details on this convenience macro)
+  SPAN_ACCESSORY("Door Lock");
 
-    SPAN_ACCESSORY();  // create Bridge (note this sketch uses the SPAN_ACCESSORY() macro, introduced in v1.5.1 --- see the HomeSpan API Reference for details on this convenience macro)
-    SPAN_ACCESSORY("Door Lock");
-
-    new SecureLock();  // create 8-LED NeoPixel RGB Strand with full color control
-
+  new SecureLock();  // create 8-LED NeoPixel RGB Strand with full color control
 }
 
 void loop() {
