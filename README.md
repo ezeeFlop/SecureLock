@@ -22,17 +22,17 @@ Install VSCode and PlateformIO, build as usual.
 
 * 3D Cover with push button in the "stl" folder
 
-[cover](https://github.com/ezeeFlop/SecureLock/tree/main/img/cover.png)
+![cover](img/cover.png)
 
 # Shematics
 
-![Base Schema](https://github.com/ezeeFlop/SecureLock/tree/main/img/schema.png)
+![Base Schema](img/schema.png)
 
 * Build a basic 5V power supply for the relay & the ESP32
 
 Beware : connect only the 5v pin of the ESP32 ! and the GND, if your board does not have a 5V input pin, consider to buy another one with it.
 
-![Power Supply](https://github.com/ezeeFlop/SecureLock/tree/main/img/powersupply.png)
+![Power Supply](img/powersupply.png)
 
 # Homekit configuration
 
@@ -40,4 +40,4 @@ Beware : connect only the 5v pin of the ESP32 ! and the GND, if your board does 
 
 * Then, use this barecode to add the accessory into you homekit
 
-![Homekit](https://github.com/ezeeFlop/SecureLock/tree/main/img/homekit.png)
+![Homekit](img/homekit.png)
