@@ -1,8 +1,78 @@
 #include <Arduino.h>
+#include <CuteBuzzerSounds.h>
 #include <HomeSpan.h>
+#include <ld2410.h>
 
+// project's constants
+#define BUZZER_PIN 21
 #define BUTTON_PIN 4
 #define RELAY_PIN 26
+
+#define PROMIXITY_OPENING_CM 80
+
+bool proximity_detected = false;
+
+struct MotionSensor : Service::MotionSensor {  // Motion sensor
+
+  SpanCharacteristic *movement;  // reference to the MotionDetected Characteristic
+  ld2410 radar;
+  uint32_t lastReading = 0;
+
+  MotionSensor() : Service::MotionSensor() {
+    movement = new Characteristic::MotionDetected(false);  // instantiate the MotionDetected Characteristic
+                                                           // radar.debug(Serial); //Uncomment to show debug information from the library on the Serial Monitor. By default this does not show sensor reads as they are very frequent.
+    Serial1.begin(256000, SERIAL_8N1, 17, 16);              // UART for monitoring the radar
+
+    delay(500);
+    LOG1(F("\nLD2410 radar sensor initialising: "));
+    if (radar.begin(Serial1)) {
+      LOG1(F("OK"));
+    } else {
+      LOG1(F("not connected"));
+    }
+  }  // end constructor
+
+  void loop() {
+    radar.read();
+
+    if (radar.isConnected() && millis() - lastReading > 2000) {
+      boolean motion = false;
+
+      lastReading = millis();
+      if (radar.presenceDetected()) {
+        if (radar.stationaryTargetDetected()) {
+          LOG1(F("Stationary target: "));
+          LOG1(radar.stationaryTargetDistance());
+          LOG1(F("cm energy:"));
+          LOG1(radar.stationaryTargetEnergy());
+          motion = true;
+          proximity_detected = false;
+        }
+        if (radar.movingTargetDetected()) {
+          LOG1(F("Moving target: "));
+          LOG1(radar.movingTargetDistance());
+          LOG1(F("cm energy:"));
+          LOG1(radar.movingTargetEnergy());
+          if (radar.movingTargetDistance() < PROMIXITY_OPENING_CM) {
+            proximity_detected = true;
+          } else {
+            proximity_detected = false;
+          }
+          motion = true;
+        }
+      } else {
+        Serial.println(F("No target"));
+      }
+
+      if (motion != movement->getVal()) {
+        movement->setVal(motion);
+        if (motion == true) {
+          LOG1("Motion was detected\n");
+        }
+      }
+    }
+  }
+};
 
 /**
  * SecureLock class that extends Service::LockMechanism to implement a secure
@@ -14,6 +84,7 @@
 struct SecureLock : Service::LockMechanism {
   SpanCharacteristic *current;
   SpanCharacteristic *target;
+  uint32_t lastOpening = 0;
 
   SecureLock() : Service::LockMechanism() {  // constructor() method
 
@@ -32,20 +103,35 @@ struct SecureLock : Service::LockMechanism {
       LOG1("Opening Door\n");
       current->setVal(0);
       digitalWrite(RELAY_PIN, HIGH);
+      cute.play(11);
       delay(3000);
       target->setVal(1);
       digitalWrite(RELAY_PIN, LOW);
       current->setVal(1);
+      cute.play(12);
+
       LOG1("Door Closed\n");
     } else {
       LOG1("Closing Door\n");
       current->setVal(1);
+      cute.play(12);
       LOG1("Door Closed\n");
     }
 
     return (true);  // return true
 
   }  // update
+
+  void loop() {
+    if (proximity_detected && millis() - lastOpening > 7000) {
+      lastOpening = millis();
+      proximity_detected = false;
+
+      target->setVal(0);
+      update();
+     // cute.play(10);
+    }
+  }
 
   void button(int pin, int pressType) override {
     LOG1("Found button press on pin: ");
@@ -60,8 +146,11 @@ struct SecureLock : Service::LockMechanism {
     if (pin == BUTTON_PIN) {
       if (pressType == SpanButton::SINGLE) {
         target->setVal(0);
-        delay(2000);
+        //delay(2000);
         update();
+        cute.play(11);
+      } else if (pressType == SpanButton::LONG) {
+        ESP.restart();
       }
     }
   }
@@ -77,20 +166,25 @@ struct SecureLock : Service::LockMechanism {
 void setup() {
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
 
+  cute.init(BUZZER_PIN);
+
+  homeSpan.setLogLevel(1);
   homeSpan.enableWebLog(10, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
   homeSpan.setQRID("SPST");
   homeSpan.setPairingCode("04288230");
+  homeSpan.enableOTA();
+  homeSpan.begin();
 
-  homeSpan.begin(Category::Doors, "SecureLock");
-
-  SPAN_ACCESSORY();  // create Bridge (note this sketch uses the SPAN_ACCESSORY() macro, introduced in v1.5.1 --- see the HomeSpan API Reference for details on this convenience macro)
   SPAN_ACCESSORY("Door Lock");
-
   new SecureLock();  // create 8-LED NeoPixel RGB Strand with full color control
-}
 
+  SPAN_ACCESSORY("Motion Sensor");
+  new MotionSensor();
+}
+#define BUZZER_CHANNEL 0
 void loop() {
   homeSpan.poll();
 }
