@@ -41,18 +41,14 @@ struct MotionSensor : Service::MotionSensor {  // Motion sensor
       lastReading = millis();
       if (radar.presenceDetected()) {
         if (radar.stationaryTargetDetected()) {
-          LOG1(F("Stationary target: "));
-          LOG1(radar.stationaryTargetDistance());
-          LOG1(F("cm energy:"));
-          LOG1(radar.stationaryTargetEnergy());
+          LOG1("Stationary target: %d\n", radar.stationaryTargetDistance());
+          LOG1("cm energy:%d\n",radar.stationaryTargetEnergy());
           motion = true;
           proximity_detected = false;
         }
         if (radar.movingTargetDetected()) {
-          LOG1(F("Moving target: "));
-          LOG1(radar.movingTargetDistance());
-          LOG1(F("cm energy:"));
-          LOG1(radar.movingTargetEnergy());
+          LOG1("Moving target: %d\n", radar.movingTargetDistance());
+          LOG1("cm energy: %d\n", radar.movingTargetEnergy());
           if (radar.movingTargetDistance() < PROMIXITY_OPENING_CM) {
             proximity_detected = true;
           } else {
@@ -61,13 +57,13 @@ struct MotionSensor : Service::MotionSensor {  // Motion sensor
           motion = true;
         }
       } else {
-        Serial.println(F("No target"));
+        WEBLOG("No target\n");
       }
 
       if (motion != movement->getVal()) {
         movement->setVal(motion);
         if (motion == true) {
-          LOG1("Motion was detected\n");
+          WEBLOG("Motion was detected\n");
         }
       }
     }
@@ -91,8 +87,7 @@ struct SecureLock : Service::LockMechanism {
     current = new Characteristic::LockCurrentState(1);  // initial value of 1 means closed
     target = new Characteristic::LockTargetState(1);    // initial value of 1 means closed
 
-    Serial.print("Configuring Door LockMechanism");  // initialization message
-    Serial.print("\n");
+    LOG1("Configuring Door LockMechanis\n");  // initialization message
 
     new SpanButton(BUTTON_PIN);
   }
@@ -100,7 +95,7 @@ struct SecureLock : Service::LockMechanism {
   boolean update() {  // update() method
 
     if (target->getNewVal() == 0) {
-      LOG1("Opening Door\n");
+      WEBLOG("Opening Door\n");
       current->setVal(0);
       digitalWrite(RELAY_PIN, HIGH);
       cute.play(11);
@@ -115,7 +110,7 @@ struct SecureLock : Service::LockMechanism {
       LOG1("Closing Door\n");
       current->setVal(1);
       cute.play(12);
-      LOG1("Door Closed\n");
+      WEBLOG("Door Closed\n");
     }
 
     return (true);  // return true
@@ -171,11 +166,11 @@ void setup() {
 
   cute.init(BUZZER_PIN);
 
-  homeSpan.setLogLevel(1);
   homeSpan.enableWebLog(10, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
+  homeSpan.setLogLevel(1);
   homeSpan.setQRID("SPST");
   homeSpan.setPairingCode("04288230");
-  homeSpan.enableOTA();
+  homeSpan.enableOTA(false, true);
   homeSpan.begin();
 
   SPAN_ACCESSORY("Door Lock");
