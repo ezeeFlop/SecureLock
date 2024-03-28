@@ -8,7 +8,7 @@
 #define BUTTON_PIN 4
 #define RELAY_PIN 26
 
-#define PROMIXITY_OPENING_CM 80
+#define PROMIXITY_OPENING_CM 50
 
 bool proximity_detected = false;
 
@@ -17,6 +17,7 @@ struct MotionSensor : Service::MotionSensor {  // Motion sensor
   SpanCharacteristic *movement;  // reference to the MotionDetected Characteristic
   ld2410 radar;
   uint32_t lastReading = 0;
+  uint32_t lastDetected = 0;
 
   MotionSensor() : Service::MotionSensor() {
     movement = new Characteristic::MotionDetected(false);  // instantiate the MotionDetected Characteristic
@@ -24,11 +25,11 @@ struct MotionSensor : Service::MotionSensor {  // Motion sensor
     Serial1.begin(256000, SERIAL_8N1, 17, 16);              // UART for monitoring the radar
 
     delay(500);
-    LOG1(F("\nLD2410 radar sensor initialising: "));
+    WEBLOG("\nLD2410 radar sensor initialising: ");
     if (radar.begin(Serial1)) {
-      LOG1(F("OK"));
+      WEBLOG("OK");
     } else {
-      LOG1(F("not connected"));
+      WEBLOG("not connected");
     }
   }  // end constructor
 
@@ -41,29 +42,35 @@ struct MotionSensor : Service::MotionSensor {  // Motion sensor
       lastReading = millis();
       if (radar.presenceDetected()) {
         if (radar.stationaryTargetDetected()) {
-          LOG1("Stationary target: %d\n", radar.stationaryTargetDistance());
-          LOG1("cm energy:%d\n",radar.stationaryTargetEnergy());
+          WEBLOG("Stationary target: %d\n", radar.stationaryTargetDistance());
+          WEBLOG("cm energy:%d\n", radar.stationaryTargetEnergy());
           motion = true;
+          lastDetected = millis();
           proximity_detected = false;
         }
         if (radar.movingTargetDetected()) {
-          LOG1("Moving target: %d\n", radar.movingTargetDistance());
-          LOG1("cm energy: %d\n", radar.movingTargetEnergy());
+          WEBLOG("Moving target: %d\n", radar.movingTargetDistance());
+          WEBLOG("cm energy: %d\n", radar.movingTargetEnergy());
           if (radar.movingTargetDistance() < PROMIXITY_OPENING_CM) {
             proximity_detected = true;
           } else {
             proximity_detected = false;
           }
           motion = true;
+          lastDetected = millis();
         }
       } else {
         WEBLOG("No target\n");
       }
 
       if (motion != movement->getVal()) {
-        movement->setVal(motion);
+        if (motion == false && millis() - lastDetected > 1000 * 60) {
+          WEBLOG("Set NO Motion was detected\n");
+          movement->setVal(motion);
+        }
         if (motion == true) {
           WEBLOG("Motion was detected\n");
+          movement->setVal(motion);
         }
       }
     }
@@ -87,7 +94,7 @@ struct SecureLock : Service::LockMechanism {
     current = new Characteristic::LockCurrentState(1);  // initial value of 1 means closed
     target = new Characteristic::LockTargetState(1);    // initial value of 1 means closed
 
-    LOG1("Configuring Door LockMechanis\n");  // initialization message
+    WEBLOG("Configuring Door LockMechanis\n");  // initialization message
 
     new SpanButton(BUTTON_PIN);
   }
@@ -98,18 +105,15 @@ struct SecureLock : Service::LockMechanism {
       WEBLOG("Opening Door\n");
       current->setVal(0);
       digitalWrite(RELAY_PIN, HIGH);
-      cute.play(11);
+      //cute.play(11);
       delay(3000);
       target->setVal(1);
       digitalWrite(RELAY_PIN, LOW);
       current->setVal(1);
-      cute.play(12);
-
-      LOG1("Door Closed\n");
+      //cute.play(12);
     } else {
-      LOG1("Closing Door\n");
       current->setVal(1);
-      cute.play(12);
+      //cute.play(12);
       WEBLOG("Door Closed\n");
     }
 
@@ -129,12 +133,11 @@ struct SecureLock : Service::LockMechanism {
   }
 
   void button(int pin, int pressType) override {
-    LOG1("Found button press on pin: ");
-    LOG1(pin);
-    LOG1("  type: ");
-    LOG1(pressType == SpanButton::LONG ? "LONG" : (pressType == SpanButton::SINGLE) ? "SINGLE"
-                                                                                    : "DOUBLE");
-    LOG1("\n");
+    WEBLOG("Found button press on pin: %d", pin);
+    WEBLOG("  type: ");
+    WEBLOG(pressType == SpanButton::LONG ? "LONG" : (pressType == SpanButton::SINGLE) ? "SINGLE"
+                                                                                      : "DOUBLE");
+    WEBLOG("\n");
 
     int newLevel;
 
@@ -166,15 +169,17 @@ void setup() {
 
   cute.init(BUZZER_PIN);
 
-  homeSpan.enableWebLog(10, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
+  homeSpan.enableWebLog(1000, "pool.ntp.org", "UTC", "myLog");  // creates a web log on the URL /HomeSpan-[DEVICE-ID].local:[TCP-PORT]/myLog
   homeSpan.setLogLevel(1);
   homeSpan.setQRID("SPST");
   homeSpan.setPairingCode("04288230");
+  homeSpan.setSketchVersion("0.1");
   homeSpan.enableOTA(false, true);
-  homeSpan.begin();
+  //homeSpan.begin();
+  homeSpan.begin(Category::Locks, "DoorLock", "DoorLock");
 
-  SPAN_ACCESSORY("Door Lock");
-  new SecureLock();  // create 8-LED NeoPixel RGB Strand with full color control
+  SPAN_ACCESSORY("Lock");
+  new SecureLock();  
 
   SPAN_ACCESSORY("Motion Sensor");
   new MotionSensor();
